@@ -1,12 +1,17 @@
 // A generic publication guard, not a replacement for secret scanning or review.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const entries = execFileSync('git', ['ls-files', '--stage', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+// Only this reviewed upstream font may be published as a binary asset.
+// Never allow screenshots, generated board previews, media or arbitrary fonts.
+const binaryAssets = new Map([
+  ['assets/fonts/IBMPlexMono-Light.ttf', '780bcf65509d72a35ec114b57bcbe220dc6b77d8ea2e9b25e294be3c570c5025'],
+]);
 const findings = [];
 for (const entry of entries) {
   const [metadata, path] = entry.split('\t');
-  const mode = metadata.split(' ')[0];
+  const [mode, objectId] = metadata.split(' ');
   if (mode === '120000' || mode === '160000') { findings.push(`${path}: symlink/submodule needs explicit publication review`); continue; }
   if (/(^|\/)(\.vercel|node_modules|work|reports|artifacts|coverage|test-results|playwright-report)(\/|$)/.test(path) ||
       /\.(secret(?:\..*)?|pem|key|log|sqlite\d*|db|wav|ogg|mp3|mp4)$/i.test(path) ||
@@ -14,7 +19,16 @@ for (const entry of entries) {
       (/(^|\/)\.env(?:\.|$)/.test(path) && path !== '.env.example')) {
     findings.push(`${path}: private/generated file must not be tracked`); continue;
   }
-  const body = readFileSync(path, 'utf8');
+  // Inspect the staged blob, so an unstaged edit cannot hide staged private data.
+  const bytes = execFileSync('git', ['cat-file', 'blob', objectId]);
+  if (binaryAssets.has(path)) {
+    if (createHash('sha256').update(bytes).digest('hex') !== binaryAssets.get(path)) findings.push(`${path}: reviewed binary digest does not match`);
+    continue;
+  }
+  if (bytes.includes(0) || /\.(?:png|jpe?g|gif|webp|heic|heif|pdf|zip|gz|ttf|otf|woff2?|bin)$/i.test(path)) {
+    findings.push(`${path}: unreviewed binary/media must not be tracked`); continue;
+  }
+  const body = bytes.toString('utf8');
   const checks = [
     ['local user path', /(?:\/Users\/|\/home\/|[A-Z]:\\Users\\)[A-Za-z0-9_.-]+/],
     ['deployment/account identifier', /\b(?:prj|team|dpl|store)_[A-Za-z0-9]{8,}\b/],

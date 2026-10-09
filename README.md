@@ -12,6 +12,7 @@ A small, self-hosted bridge built with plain JavaScript, Kapso and Vercel. It ru
 - Centers text vertically and horizontally; adds coordinated color patterns in spare cells.
 - Saves messages before delivery, processes them in order, and retries temporary failures.
 - Keeps updates at least 20 seconds apart. The last message stays on the board.
+- Replies with an image of the accepted **3 × 15 board layout**, including spacing, hearts and colors. It cannot wrap differently on a phone.
 - Includes a private setup page, tests, opt-in live evals and a daily recovery job.
 
 This targets **Vestaboard Note**, not the larger 6 × 22 Vestaboard. It is a single-board, trusted-household service, not a multi-tenant messaging platform. It is not affiliated with Vestaboard, WhatsApp, Kapso or Vercel.
@@ -30,10 +31,20 @@ flowchart LR
   A --> V[Vestaboard Cloud API]
   R --> V
   V --> N[Physical Note]
+  R -->|After API acceptance| P[Render saved layout as PNG]
+  P -->|Upload through Kapso| I[WhatsApp image reply]
   C[Daily recovery cron] --> Q
 ```
 
-The persistent inbox provides ordering and checkpoints. Queue callbacks wake the worker; they are not assumed to arrive in order. Only three runtime packages are used: `@vercel/blob`, `@vercel/oidc` and `@vercel/queue`.
+The persistent inbox provides ordering and checkpoints. Queue callbacks wake the worker; they are not assumed to arrive in order. Four runtime packages are used: `@vercel/blob`, `@vercel/oidc`, `@vercel/queue` and `@resvg/resvg-js` for image rendering.
+
+### Image replies
+
+After Vestaboard accepts an update and the worker saves its progress, the sender receives a PNG preview of the **same saved character array**. This works for short texts, shortened messages and voice notes. Legacy multi-page jobs send a single preview of the final page. Failed or still-pending updates do not get a success preview.
+
+The image has fixed cell positions, so text and colored tiles stay aligned across phones. Rendering is deterministic code with a bundled font; it needs no image-generation model, browser or additional AI key. The font and tile colors approximate the hardware. A preview confirms Cloud API acceptance, not independently observed flap movement or future changes made outside the bridge.
+
+Previews are generated in memory, uploaded directly through Kapso to WhatsApp, and sent by media ID. The bridge creates no public image URL or preview archive. Replies are attempted at most once within the supported 23-hour reply window; a failed reply does not resend the board update.
 
 ## Before you start
 
@@ -123,7 +134,7 @@ Until configuration is complete, `/api/health` returning `503` is expected.
 
 ### 5. Connect Kapso
 
-In your Kapso project, obtain the connected number's **Phone Number ID**, the WhatsApp number, and a scoped API key that can access that number, its media and message sending.
+In your Kapso project, obtain the connected number's **Phone Number ID**, the WhatsApp number, and a scoped API key that can access that number, media downloads/uploads and message sending.
 
 In the app's WhatsApp settings, enter:
 
@@ -151,12 +162,26 @@ Kapso must be able to reach the production webhook. A Vercel login screen in fro
 
 1. Check `https://YOUR_PROJECT.vercel.app/api/health`: expect HTTP `200` with `status: "ready"`.
 2. Send a short WhatsApp text **from an allowed number** to your connected number. Allow time for the minimum 20-second spacing and provider latency.
-3. Check the physical Note and the private setup page's last accepted message.
+3. Check the physical Note, the returned WhatsApp image and the private setup page's last accepted message. The preview must keep all 15 columns on each of its three rows.
 4. Send a long reminder, then a voice note. Confirm their meaning and layout on the board.
 5. Send two messages quickly and confirm their order. A non-allowed sender must not change the display.
 6. Confirm `/api/recover` is listed in the project's Cron Jobs. The repository schedules a daily recovery check; regular delivery does not wait for it.
 
 A setup-page success or cloud API readback proves cloud acceptance, not independently observed movement of the physical flaps. Your Note still needs power and Wi-Fi.
+
+## Upgrade an existing installation
+
+Version 1.1 adds image replies. Review the changes and confirm `.vercel/project.json` points to **your own existing project**, then:
+
+```sh
+git pull --ff-only
+npm ci --ignore-scripts
+npm test
+npm run check:public
+vercel deploy --prod
+```
+
+No new secrets or state migration are required. Keep the bundled `assets/fonts/` directory and the `includeFiles` settings in `vercel.json`; the renderer needs them in the deployed functions. Verify that your Kapso key permits media upload, then send an allowed test message to your own board and check the returned image. Existing stored credentials and sender allowlists remain in your private installation.
 
 ## Development and evals
 
@@ -200,4 +225,4 @@ The language model formats content only. It has no shell, browser, filesystem, s
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and [SECURITY.md](SECURITY.md) for the threat model and private reporting. CI runs tests, the publication guard and a dependency audit with read-only repository permissions and no deployment secrets.
 
-Licensed under [MIT](LICENSE).
+Application code is licensed under [MIT](LICENSE). The unmodified IBM Plex Mono font is included under the [SIL Open Font License](assets/fonts/OFL.txt), with [source and checksum information](assets/fonts/SOURCE.txt). The image renderer dependency uses its own MPL-2.0 license.

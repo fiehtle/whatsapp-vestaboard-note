@@ -1,0 +1,5 @@
+IBM Plex Mono Light, bundled unmodified under the SIL Open Font License.
+Source: https://github.com/google/fonts/tree/main/ofl/ibmplexmono
+Font Git blob SHA-1: 61d43577842179cdffeb38b6c1928786981db0da
+Upstream OFL.txt Git blob SHA-1: c35c4c618fab33da8695177b3a6cefe0810b7b28
+Packaged license text has normalized line endings and trailing whitespace.

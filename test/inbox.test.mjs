@@ -21,7 +21,7 @@ function fixture() {
     },
     now: () => now, sleep: async ms => { now += ms; },
     boardRequest: async (_token, _method, body) => { writes.push({ text: decode(body.characters), characters: body.characters, at: now }); },
-    sendFeedback: async (_settings, message, text) => { replies.push({ to: message.from, text }); },
+    sendFeedback: async (_settings, message, content) => { replies.push({ to: message.from, text: typeof content === 'string' ? content : '', ...(content?.type === 'image' ? { image: content.layout } : {}) }); },
     formatForBoard: async () => ({ text: 'FORMATTED TEXT', model: 'test-nano' }),
     enqueue: async (message, options) => { queued.push({ ...message, options }); },
   };
@@ -55,7 +55,7 @@ test('non-FIFO queue delivery cannot reorder two people’s messages or legacy p
   await deliverInbox('a', f.deps); await deliverInbox('b', f.deps);
   assert.deepEqual(f.writes.map(w => w.text), ['ONE\nTWO\nTHREE', 'FOUR', 'SECOND PERSON']);
   assert.ok(f.writes.every((w, i) => !i || w.at - f.writes[i - 1].at >= PAGE_MS));
-  assert.equal(f.state().inbox.length, 0); assert.equal(f.replies.length, 1);
+  assert.equal(f.state().inbox.length, 0); assert.equal(f.replies.length, 3);
   await deliverInbox('a', f.deps); await f.add(f.message('a'));
   assert.equal(f.writes.length, 3); assert.equal(f.state().inbox.length, 0);
 });
@@ -85,7 +85,7 @@ test('crashes after a successful page resume at the next page, never replay comp
   f.advance(360001); f.deps.boardRequest = original;
   await deliverInbox('a', f.deps);
   assert.deepEqual(f.writes.map(w => w.text), ['ONE\nTWO\nTHREE', 'FOUR']);
-  assert.equal(f.replies.filter(r => r.text.includes('2 pages')).length, 1);
+  assert.equal(f.replies.filter(r => r.text.startsWith('I will display this in 2 pages')).length, 1);
   assert.equal(f.replies.filter(r => r.text.includes('retry')).length, 1);
 });
 
@@ -137,10 +137,12 @@ test('long text is formatted once, persisted before writing, and sends the exact
   await f.add(f.message('a', 'Please remember to take all the recycling bins outside tomorrow.'));
   const original = f.deps.boardRequest;
   f.deps.boardRequest = async () => { throw new Error('offline'); };
-  await deliverInbox('a', f.deps); f.advance(360001); f.deps.boardRequest = original;
+  await deliverInbox('a', f.deps);
+  assert.ok(f.replies.every(r => !r.image));
+  f.advance(360001); f.deps.boardRequest = original;
   await deliverInbox('a', f.deps);
   assert.equal(calls, 1); assert.equal(f.writes[0].text, 'BINS OUT\nTOMORROW');
-  assert.equal(f.replies.filter(r => r.text === 'Formatted for the board:\nBINS OUT\nTOMORROW').length, 1);
+  assert.deepEqual(f.replies.filter(r => r.image).map(r => r.image), [f.writes[0].characters]);
 });
 
 test('AI outage preserves the original and automatically retries without losing order or asking for edits', async () => {
@@ -214,7 +216,7 @@ test('voice transcript is persisted once and parsed even when short; board retri
   assert.equal(transcriptions, 1); assert.equal(formats, 1);
   assert.deepEqual(f.writes[0].characters, noteLayout('HELLO ♥', { decorate: true, seed: 'v:0' }));
   assert.equal(f.state().lastInputType, 'voice');
-  assert.equal(f.replies.filter(r => r.text.startsWith('From your voice note')).length, 1);
+  assert.deepEqual(f.replies.filter(r => r.image).map(r => r.image), [f.writes[0].characters]);
 });
 
 test('voice failures retry in order; silence finishes without blocking the next message', async () => {
@@ -305,4 +307,82 @@ test('new admissions revive a stranded head and completed IDs remain deduplicate
   await f.add(f.message('first')); assert.equal(f.state().inbox.length, 0);
   await f.add(f.message('third')); await deliverInbox('third', f.deps);
   assert.ok(f.state().inboxCompleted.first); assert.equal(f.writes.length, 3);
+});
+
+test('short messages confirm to each original sender only after board acceptance is persisted', async () => {
+  const f = fixture(); await f.add(f.message('a')); await f.add(f.message('b', 'SECOND', '456'));
+  const reply = f.deps.sendFeedback;
+  f.deps.sendFeedback = async (settings, message, text) => {
+    assert.equal(f.state().lastMessageId, message.id);
+    assert.equal(f.state().inbox[0].page, message.pages.length);
+    assert.ok(f.writes.some(w => w.text === message.pages.at(-1)));
+    await reply(settings, message, text);
+  };
+  await deliverInbox('a', f.deps); await deliverInbox('b', f.deps);
+  await deliverInbox('a', f.deps); await deliverInbox('b', f.deps);
+  assert.deepEqual(f.replies, [
+    { to: '123', text: '', image: f.writes[0].characters },
+    { to: '456', text: '', image: f.writes[1].characters },
+  ]);
+  assert.equal(f.writes.length, 2);
+});
+
+test('a crash after board acceptance resumes the receipt without repeating the board update', async () => {
+  const f = fixture(); await f.add(f.message('a'));
+  const persist = f.deps.writeState;
+  f.deps.writeState = async (value, etag) => {
+    if (value.inbox?.[0]?.notified?.includes('delivered')) throw new Error('crashed before receipt');
+    await persist(value, etag);
+  };
+  await assert.rejects(deliverInbox('a', f.deps), /crashed before receipt/);
+  assert.equal(f.state().inbox[0].page, 1);
+  assert.equal(f.writes.length, 1); assert.equal(f.replies.length, 0);
+  f.deps.writeState = persist; f.advance(360001);
+  await deliverInbox('a', f.deps);
+  assert.equal(f.writes.length, 1); assert.equal(f.replies.length, 1);
+  assert.deepEqual(f.replies[0].image, f.writes[0].characters);
+  assert.equal(f.state().inbox.length, 0);
+});
+
+test('a crash after sending the receipt does not duplicate the receipt or board update', async () => {
+  const f = fixture(); await f.add(f.message('a'));
+  const persist = f.deps.writeState;
+  f.deps.writeState = async (value, etag) => {
+    if (!value.inbox?.length) throw new Error('crashed before completion');
+    await persist(value, etag);
+  };
+  await assert.rejects(deliverInbox('a', f.deps), /crashed before completion/);
+  assert.equal(f.writes.length, 1); assert.equal(f.replies.length, 1);
+  f.deps.writeState = persist; f.advance(360001);
+  await deliverInbox('a', f.deps);
+  assert.equal(f.writes.length, 1); assert.equal(f.replies.length, 1);
+  assert.equal(f.state().inbox.length, 0);
+});
+
+test('a failed success reply does not resend the board update or prevent the next sender', async () => {
+  const f = fixture(); await f.add(f.message('a')); await f.add(f.message('b', 'NEXT', '456'));
+  let attempts = 0;
+  f.deps.sendFeedback = async () => { attempts++; throw new Error('WhatsApp timeout'); };
+  await deliverInbox('a', f.deps); await deliverInbox('a', f.deps); await deliverInbox('b', f.deps);
+  assert.equal(attempts, 2); assert.equal(f.writes.length, 2);
+  assert.equal(f.state().inbox.length, 0); assert.match(f.state().lastFeedbackError, /could not/);
+});
+
+test('legacy multi-page messages get a single success receipt after the final page', async () => {
+  const f = fixture(); await f.addLegacy(f.message('a', 'ONE\nTWO\nTHREE\nFOUR'));
+  const reply = f.deps.sendFeedback;
+  f.deps.sendFeedback = async (settings, message, text) => {
+    if (text?.type === 'image') { assert.equal(f.writes.length, 2); assert.equal(message.page, 2); }
+    await reply(settings, message, text);
+  };
+  await deliverInbox('a', f.deps);
+  assert.deepEqual(f.replies.filter(r => r.image), [
+    { to: '123', text: '', image: f.writes[1].characters },
+  ]);
+});
+
+test('admin updates never send WhatsApp receipts', async () => {
+  const f = fixture(); await f.add({ ...f.message('admin'), source: 'admin' });
+  await deliverInbox('admin', f.deps);
+  assert.equal(f.writes.length, 1); assert.equal(f.replies.length, 0);
 });

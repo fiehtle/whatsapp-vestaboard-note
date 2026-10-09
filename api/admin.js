@@ -85,6 +85,15 @@ export function createHandler(overrides = {}) {
       if (body.action === 'read') {
         return json(res, 200, { characters: assertNote(await d.boardRequest(settings.vestaboardToken)) });
       }
+      if (body.action === 'preview') {
+        const layout = assertNote(await d.boardRequest(settings.vestaboardToken));
+        const { renderNotePng } = await import('../lib/preview.mjs');
+        const png = renderNotePng(layout);
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'private, no-store');
+        return res.end(png);
+      }
       return json(res, 400, { error: 'Unknown action' });
     } catch (error) { safeError(error); return json(res, 503, { error: 'Service temporarily unavailable; retry shortly' }); }
   };

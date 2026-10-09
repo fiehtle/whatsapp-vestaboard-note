@@ -27,6 +27,12 @@ must verify credentials independently.
 - Provider destinations are fixed. Credential-bearing requests reject redirects.
   Audio downloads accept only Kapso's exact HTTPS media-download origin/path,
   reject redirects and enforce media/size limits. Message URLs are never fetched.
+- Board previews accept only a validated 3 × 15 array of device character codes.
+  The renderer uses a bundled font, fixed colors and escaped glyphs; message text
+  cannot supply SVG, font paths, URLs or executable rendering instructions.
+  Images upload directly to WhatsApp and are sent by media ID, without public
+  storage links. Admin preview readback requires the same bearer authentication
+  as other admin actions and returns private, no-store responses.
 - LLM input is the user's message plus public device instructions. No credentials
   or environment contents are included; no executable tools are exposed.
 - Responses use no-store headers. The UI renders untrusted text with textContent;
@@ -42,7 +48,9 @@ message/layout and recent deduplication IDs remain. These state records are priv
 Blob data, not additionally encrypted by this application. Raw downloaded audio
 exists only during the worker invocation. Kapso, WhatsApp, Vercel and AI providers
 have their own storage/retention practices; inspect those before sending sensitive
-content. Long messages and audio/transcripts may be sent to AI providers.
+content. Long messages and audio/transcripts may be sent to AI providers. Board
+preview PNGs exist in memory during generation and are uploaded to Kapso/WhatsApp;
+their provider retention policies still apply. The bridge does not archive PNGs.
 
 A bearer token grants admin access. Anyone who obtains it, a provider key or cloud
 account access can exceed the intended trust boundary. Browser extensions, a
@@ -69,8 +77,9 @@ absence of vulnerabilities is claimed.
 5. Enable GitHub secret scanning/push protection where available. Never store
    production credentials in this public repository's Actions secrets.
 
-The publication guard catches common files and configuration leaks; it cannot
-know every operator's personal data. Review your own changes before pushing.
+The publication guard scans staged Git blobs, rejects private/generated files and
+unreviewed binary/media assets, and verifies the bundled upstream font by checksum.
+It cannot know every operator's personal data. Review your changes before pushing.
 
 ## Reporting
 

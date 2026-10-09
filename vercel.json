@@ -4,10 +4,11 @@
   "functions": {
     "api/deliver.js": {
       "maxDuration": 300,
+      "includeFiles": "assets/fonts/**",
       "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "board-messages", "maxConcurrency": 1, "retryAfterSeconds": 30, "maxDeliveries": 64 }]
     },
     "api/kapso.js": { "maxDuration": 30 },
-    "api/admin.js": { "maxDuration": 30 },
+    "api/admin.js": { "maxDuration": 30, "includeFiles": "assets/fonts/**" },
     "api/recover.js": { "maxDuration": 30 },
     "api/health.js": { "maxDuration": 15 }
   },

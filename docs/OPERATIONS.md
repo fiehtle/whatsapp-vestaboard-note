@@ -11,6 +11,8 @@
 | `lib/format.mjs` | Short-text bypass; validated mini-model output, stronger fallback |
 | `lib/voice.mjs` | Authenticated Kapso media and transcription fallback |
 | `lib/note.mjs` | Note glyphs, wrapping, centering and deterministic decoration |
+| `lib/preview.mjs` | Fixed 3 × 15 SVG/PNG renderer with bundled font |
+| `lib/feedback.mjs` | Allowed-sender text notices and private WhatsApp image upload/send |
 | `lib/board.mjs` | Fixed Vestaboard Cloud API destination and Note verification |
 | `api/recover.js` | Authenticated daily recovery |
 | `api/admin.js` | Authenticated settings, tests, status, board readback and diagnostics |
@@ -27,6 +29,18 @@ formatting and exact character arrays are checkpointed so board retries do not
 regenerate them. After each confirmed write the page index advances; callbacks
 may still repeat a write after an uncertain crash. The consumer's maximum runtime
 is five minutes. The last accepted array is available to the authenticated admin.
+
+After the final page is accepted and checkpointed, the worker sends its exact
+saved layout back as a PNG image. The 3 × 15 geometry is fixed inside the image,
+so phone font size and emoji rendering cannot wrap the preview. The renderer uses
+the bundled OFL font and no image-generation model. Previews approximate hardware
+appearance; they do not observe physical flap movement.
+
+The PNG exists in memory and uploads directly through Kapso to WhatsApp; its media
+ID is then sent to the original authorized sender. No public preview URL or local
+image archive is created. Replies are attempted at most once within 23 hours of
+the inbound message. An uncertain reply is not automatically resent; a reply
+failure records a generic error and never repeats an accepted board write.
 
 Provider failures publish delayed retries (30 seconds, increasing to one hour).
 An uncertain board response retains the safety lease. New admissions and the daily
@@ -63,6 +77,7 @@ An authenticated `POST /api/admin` accepts these JSON actions:
 | `diagnostic` | Sends a harmless queue diagnostic; GET status exposes its processed timestamp |
 | `retryPending` | Requeues an eligible oldest saved message |
 | `read` | Reads the Note's current cloud array |
+| `preview` | Returns a private, uncached PNG of the current cloud array; sends no message |
 | `test` with `text` | Writes a REAL message through the persistent inbox |
 | `save` | Updates supplied configuration fields; blank secret fields retain existing values |
 
@@ -91,3 +106,10 @@ Review upstream changes and run the local tests before deploying. Verify
 Never pull production credentials into an untrusted checkout. Keep preview and
 production Blob stores separate; their fixed state object names would otherwise
 make them operate on the same inbox.
+
+For the image-preview update, install the updated lockfile and deploy the bundled
+`assets/fonts/` along with the new functions. Keep their `includeFiles` entries in
+`vercel.json`. No new environment variable or state migration is needed. If images
+fail while the board updates, inspect `lastFeedbackError`, the Kapso key's media
+upload permission, and the authenticated `preview` action. Do not publish the
+returned image or private runtime logs as troubleshooting attachments.

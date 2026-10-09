@@ -9,7 +9,7 @@ import { transcribeAudio } from '../lib/voice.mjs';
 
 const token = 'synthetic-admin-token';
 const settings = { provider: 'kapso', kapsoApiKey: 'synthetic-kapso-key', kapsoWebhookSecret: 'synthetic-hook-key', vestaboardToken: 'synthetic-board-key', phoneNumberId: '12345', boardNumber: '12025550100', allowedSenders: ['12025550101'] };
-function response() { return { headers: {}, setHeader(key, value) { this.headers[key] = value; }, end(body) { this.body = JSON.parse(body); } }; }
+function response() { return { headers: {}, setHeader(key, value) { this.headers[key] = value; }, end(body) { this.body = Buffer.isBuffer(body) ? body : JSON.parse(body); } }; }
 async function request(handler, body, auth, method = 'POST', contentType = 'application/json') {
   const req = Readable.from([typeof body === 'string' ? body : JSON.stringify(body)]);
   req.method = method; req.headers = { authorization: auth, 'content-type': contentType };
@@ -24,10 +24,30 @@ test('admin rejects absent/wrong credentials before storage, including an unset 
     for (const auth of [undefined, '', 'Bearer wrong', ['Bearer '+token]]) {
       const res = await request(handler, { action: 'read' }, auth);
       assert.equal(res.statusCode, 401); assert.equal(res.headers['Cache-Control'], 'no-store');
+      assert.equal((await request(handler, { action: 'preview' }, auth)).statusCode, 401);
     }
     delete process.env.ADMIN_TOKEN;
     assert.equal((await request(handler, { action: 'read' }, 'Bearer ')).statusCode, 401);
     assert.equal(reads, 0);
+  } finally { if (previous === undefined) delete process.env.ADMIN_TOKEN; else process.env.ADMIN_TOKEN = previous; }
+});
+
+test('admin preview renders only the configured board readback and never exposes a public cached image', async () => {
+  const previous = process.env.ADMIN_TOKEN; process.env.ADMIN_TOKEN = token;
+  const layout = Array.from({ length: 3 }, () => Array(15).fill(67));
+  let reads = 0;
+  const handler = createHandler({ getConfig: async () => settings, boardRequest: async key => {
+    assert.equal(key, settings.vestaboardToken); reads++;
+    return { currentMessage: { layout } };
+  } });
+  try {
+    const res = await request(handler, { action: 'preview', layout: 'untrusted input must be ignored', url: 'https://example.com/' }, 'Bearer '+token);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['Cache-Control'], 'private, no-store');
+    assert.equal(res.headers['Content-Type'], 'image/png');
+    assert.equal(res.body.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    assert.equal(res.body.readUInt32BE(16), 1196); assert.equal(res.body.readUInt32BE(20), 400);
+    assert.equal(reads, 1);
   } finally { if (previous === undefined) delete process.env.ADMIN_TOKEN; else process.env.ADMIN_TOKEN = previous; }
 });
 
