@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["fra1"],
+  "functions": {
+    "api/deliver.js": {
+      "maxDuration": 300,
+      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "board-messages", "maxConcurrency": 1, "retryAfterSeconds": 30, "maxDeliveries": 64 }]
+    },
+    "api/kapso.js": { "maxDuration": 30 },
+    "api/admin.js": { "maxDuration": 30 },
+    "api/recover.js": { "maxDuration": 30 },
+    "api/health.js": { "maxDuration": 15 }
+  },
+  "crons": [{ "path": "/api/recover", "schedule": "0 4 * * *" }],
+  "headers": [{ "source": "/(.*)", "headers": [
+    { "key": "X-Content-Type-Options", "value": "nosniff" },
+    { "key": "Referrer-Policy", "value": "no-referrer" },
+    { "key": "X-Frame-Options", "value": "DENY" },
+    { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }
+  ]}]
+}

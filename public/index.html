@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Note · WhatsApp</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body><main><header><span class="eyebrow">YOUR WORDS, IN THE ROOM</span><h1>WhatsApp → Note</h1><p>A private line to your Vestaboard.</p></header>
+<div id="notice" role="status">Connecting…</div><section id="locked" hidden><h2>Private setup</h2><p>Use the admin token you generated for this deployment. It stays in this browser tab until you lock it.</p><form id="unlockForm"><label for="adminToken">Admin token</label><input id="adminToken" type="password" autocomplete="off" required><button>Unlock setup</button></form></section>
+<div id="controls" hidden><button id="lockButton" type="button">Lock setup</button><div class="status"><span id="boardStatus">Board not connected</span><span id="whatsappStatus">WhatsApp not configured</span></div>
+<section><h2>1. Connect your Note</h2><p>In <a href="https://web.vestaboard.com" target="_blank" rel="noreferrer">Vestaboard</a>, open API and create a token with Read + Write access. Enter it here once.</p>
+<form id="boardForm"><label for="vestaboardToken">Vestaboard Cloud API token</label><input id="vestaboardToken" type="password" autocomplete="off" required><button>Connect board</button></form></section>
+<section><h2>2. Connect WhatsApp</h2><p>A dedicated WhatsApp number delivers messages only from the people you allow.</p>
+<form id="whatsappForm">
+<div id="kapsoSettings"><label for="kapsoWebhookSecret">Kapso webhook secret</label><input id="kapsoWebhookSecret" type="password" autocomplete="off"><small>Use the same secret in your Kapso webhook. Leave blank to keep the saved secret.</small><label for="kapsoApiKey">Kapso API key · WhatsApp replies</label><input id="kapsoApiKey" type="password" autocomplete="off"><small>Leave blank to keep the saved key.</small></div>
+<label for="phoneNumberId">WhatsApp Phone Number ID</label><input id="phoneNumberId" inputmode="numeric" required>
+<label for="boardNumber">Board's WhatsApp number</label><input id="boardNumber" type="tel" placeholder="+country code and number" required>
+<label for="allowedSenders">Allowed WhatsApp numbers · include country codes</label><input id="allowedSenders" type="text" placeholder="+country code and number, +another number" required><small>Separate numbers with commas. Only these people can write.</small>
+<button>Save WhatsApp settings</button></form>
+<div class="webhook"><p id="webhookInstructions"></p><label>Callback URL · POST</label><code id="callbackUrl"></code></div></section>
+<section><h2>3. Send to the physical board</h2><p>Send text or a WhatsApp voice note. Voice notes are transcribed and interpreted automatically. The formatter uses the Note's 3 × 15 cells, preserving useful wording across all three rows. Text is centered horizontally and vertically. Spare cells get a fresh, coordinated color pattern with every message. Hearts and requested color tiles are supported, too. Temporary failures retry automatically. No editing or resending; updates stay at least 20 seconds apart.</p><p id="queueStatus"></p>
+<form id="testForm"><label for="testText">Message</label><textarea id="testText" rows="3" maxlength="4096" required>HELLO FROM
+WHATSAPP</textarea><button id="testButton">Send to my Note</button></form>
+<a id="chatLink" class="chat" hidden target="_blank" rel="noreferrer">Open board chat in WhatsApp ↗</a>
+<div class="last"><label>Last message accepted by Vestaboard's cloud</label><pre id="lastText">No message sent yet</pre><small id="lastTime"></small><p id="lastError"></p><p id="feedbackError"></p></div></section>
+<footer>Runs on Vercel. Credentials are encrypted. Your laptop can be off.</footer></div></main></body></html>

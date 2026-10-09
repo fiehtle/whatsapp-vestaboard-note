@@ -1,0 +1,23 @@
+{
+  "name": "whatsapp-vestaboard-note",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage test/*.test.mjs",
+    "eval": "node eval/format.mjs",
+    "setup:secrets": "node scripts/setup-secrets.mjs",
+    "check:public": "node scripts/check-public.mjs"
+  },
+  "dependencies": {
+    "@vercel/blob": "2.8.1",
+    "@vercel/oidc": "3.8.10",
+    "@vercel/queue": "0.8.0"
+  },
+  "description": "Self-hosted WhatsApp text and voice notes for a physical Vestaboard Note",
+  "license": "MIT"
+}
